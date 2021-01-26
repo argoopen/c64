@@ -16,11 +16,12 @@ BasicUpstart2(start)
 .var joy_right = %00001000;
 
 .var start_pos = $05f4
-.var start_speed = $ff
+.var start_speed = 20
 .var start_tail_length = $08
 
 .var char_player = $57
 .var char_border = $66
+.var char_mushroom = $41
 .var char_space = $20
 
 .var dir_up = 1
@@ -28,38 +29,55 @@ BasicUpstart2(start)
 .var dir_down = 3
 .var dir_left = 4
 
+.var sound_freq_normal = 20
+.var sound_freq_score = 60
+.var sound_freq_crash = 100
+
 .var sram_ptr = $bb
 .var head_history_ptr = $fb
 .var tail_history_ptr = $fd
 .var temp_ptr = $39
 
-start: jsr init
+start: 
+       jsr init
        jsr drawborder
+       jsr place_mushroom
+       jsr print_score
 
-loop:  jsr check_joystick
+loop:  lda #60
+!:     cmp $d012
+       bne !-
+!:     cmp $d012
+       beq !-
+
+       jsr check_joystick
+
+       dec counter
+       bne loop
+       lda speed
+       sta counter
+
        jsr move_player
        jsr update_head_history
        jsr update_tail_history
        jsr check_collision
+       
        jsr beep
        jsr draw_player
 
-       ldx speed
-       jsr delay
+       jsr print_score
 
-       sec
        lda speed
-       sbc #$04
-       sta speed
-       cmp #$20
-       bcs skip_reset_speed
-       lda #$20
-       sta speed
-  skip_reset_speed:
-       jsr $ffe1
-       bne loop
+       cmp #5
+       beq loop
+       dec speed
 
-init:  jsr $e544
+       jmp loop
+
+init:  
+       jsr initsid
+  
+       jsr $e544
 
        lda #$00
        sta sram_ptr
@@ -69,6 +87,8 @@ init:  jsr $e544
        lda #0
        sta $d020
        sta $d021
+       sta score
+       sta score+1
 
        lda #<start_pos
        ldx #>start_pos
@@ -98,27 +118,114 @@ init:  jsr $e544
        rts
 
 initsid:
-       lda #$00
-       ldx #$00
-  initsidloop:
-       sta sid, y
-       iny
-       cpy 28
-       bne initsidloop
+       lda #0
+       ldy #24
+!:     sta sid,y
+       dey
+       bpl !-
+
+       lda #9   // attack v1
+       sta sid+5
+       lda #30 // sustain v1
+       sta sid+15
+       lda #%00001111 // volume (low 4 bits)
+       sta sid+24
+
+       lda #$ff
+       sta sid+14
+       sta sid+15
+       lda #$80
+       sta sid+18
+       rts
+
+place_mushroom:
+!:     ldy sid+27
+
+       cpy #$b0
+       bcc !+
+       lda #$04
+       jmp place_mushroom_v
+       
+!:     cpy #$80
+       bcc !+
+       lda #$05
+       jmp place_mushroom_v
+       
+!:     cpy #$40
+       bcc !+
+       lda #$06
+       jmp place_mushroom_v
+
+!:     lda #$07
+       
+  place_mushroom_v:
+       sta place_mushroom_v+11
+       sta place_mushroom_v+20
+       ldy sid+27
+       lda $0000, y
+       cmp #char_space
+       bne !----
+       lda #char_mushroom
+       sta $0000, y
        rts
 
 check_collision:
+       lda #sound_freq_normal 
+       sta current_sound
+
        ldy #$00
        lda (sram_ptr),y
-       cmp #$20
-       bne game_over
+
+       cmp #char_space
+       bne !+
        rts
 
+!:     cmp #char_mushroom
+       bne !+
+       jsr mushroom_hit
+       rts
+
+!:     jmp game_over
+
+mushroom_hit:
+       lda #sound_freq_score 
+       sta current_sound
+
+       clc
+       lda score
+       adc #10
+       sta score
+
+       lda score+1
+       adc #0
+       sta score+1
+
+       lda sid+27
+       clc
+       ror
+       clc
+       ror
+       clc
+       ror
+       clc
+       ror
+       clc
+       ror
+       sta tail_growth
+
+       jsr place_mushroom
+
+!:     rts
+
 game_over:
-       inc $d020
+       lda #sound_freq_crash
+       sta current_sound
+       jsr beep
+
+!:     inc $d020
        dec $d021
        jsr $ffe4
-       beq game_over
+       beq !-
        jmp start
 
 check_joystick:
@@ -312,20 +419,14 @@ draw_player:
       
        rts
 
-beep:   jsr initsid
-        lda #15
-        sta sid+24
-        lda #90
-        sta sid+1
-        lda #8*16+8
-        sta sid+5
-        lda #8*16+4
-        sta sid+6
-        lda #1+16
-        sta sid+4
-        lda #16
-        sta sid+4
-        rts
+beep:   
+       lda current_sound
+       sta sid+1
+       lda #%00010100
+       sta sid+4
+       lda #%00010101
+       sta sid+4
+       rts
 
 drawborder:
        jsr drawtop
@@ -380,23 +481,36 @@ drawborder:
        inx
        cpx #39
        bcc drawbottom
+  drawscoretitle:
+       ldx #0
+    !: lda score_label,x
+       sta $0410,x
+       inx
+       cpx #7
+       bne !-
        rts
 
-delay:
-       ldy #0
-  delayyloop:
-       dey
-       bne delayyloop
-       dex
-       bne delay
+print_score:
+       clc
+       ldx #0
+       ldy #22
+       jsr $fff0
+
+       lda score+1
+       ldx score
+       jsr $bdcd
        rts
-       
+
+score:               .word 0
 head_pos:            .word start_pos
 tail_pos:            .word start_pos
 player_history_head: .word start_pos
 player_dir:          .byte dir_right
+counter:             .byte $01
 speed:               .byte start_speed
 tail_growth:         .byte start_tail_length
+score_label:         .text "score:"
+current_sound:       .byte sound_freq_normal 
 
 history:     .fill 2048, 0
 
