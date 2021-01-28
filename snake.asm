@@ -7,6 +7,9 @@ BasicUpstart2(start)
 
 * = $1000
 
+.var r_start = 5
+.var r_end = 90
+
 .var sid =  $d400
 .var joy2 = $dc00
 
@@ -19,10 +22,10 @@ BasicUpstart2(start)
 .var start_speed = 20
 .var start_tail_length = $08
 
-.var char_player = $57
-.var char_border = $66
-.var char_mushroom = $41
-.var char_space = $20
+.var char_player = 28
+.var char_border = 27
+.var char_mushroom = 0
+.var char_space = 32
 
 .var dir_up = 1
 .var dir_right = 2
@@ -75,6 +78,11 @@ loop:  lda #60
        jmp loop
 
 init:  
+       lda #$18       // relocate charset
+       sta $d018
+
+       jsr setup_interrupt
+
        jsr initsid
   
        jsr $e544
@@ -501,6 +509,65 @@ print_score:
        jsr $bdcd
        rts
 
+setup_interrupt:
+           sei                  //set interrupt bit, make the CPU ignore interrupt requests
+           lda #%01111111       //switch off interrupt signals from CIA-1
+           sta $dc0d
+
+           and $d011            //clear most significant bit of VIC's raster register
+           sta $d011
+
+           lda $dc0d            //acknowledge pending interrupts from CIA-1
+           lda $dd0d            //acknowledge pending interrupts from CIA-2
+
+           lda #r_start             //set rasterline where interrupt shall occur
+           sta $d012
+
+           lda #<irq            //set interrupt vectors, pointing to interrupt service routine below
+           sta $0314
+           lda #>irq
+           sta $0315
+
+           lda #%00000001       //enable raster interrupt signals from VIC
+           sta $D01A
+
+           cli                  //clear interrupt flag, allowing the CPU to respond to interrupt requests
+           rts
+
+irq:
+           lda $d016
+           and #%11101111
+           sta $d016
+
+           lda #<irq2           //set interrupt vectors to the second interrupt service routine at Irq2
+           sta $0314
+           lda #>irq2
+           sta $0315
+
+           lda #r_end
+           sta $d012            //next interrupt will occur at line no. 0
+
+           asl $d019            //acknowledge the interrupt by clearing the VIC's interrupt flag
+
+           jmp $ea31            //jump into KERNAL's standard interrupt service routine to handle keyboard scan, cursor display etc.
+
+irq2:
+           lda $d016
+           ora #%00010000
+           sta $d016
+
+           lda #<irq             //set interrupt vectors back to the first interrupt service routine at Irq
+           sta $0314
+           lda #>irq
+           sta $0315
+
+           lda #r_start
+           sta $d012            //next interrupt will occur at line no. 210
+
+           asl $d019            //acknowledge the interrupt by clearing the VIC's interrupt flag
+
+           jmp $ea31            //jump into KERNAL's standard interrupt service routine to handle keyboard scan, cursor display etc.
+
 score:               .word 0
 head_pos:            .word start_pos
 tail_pos:            .word start_pos
@@ -513,4 +580,8 @@ score_label:         .text "score:"
 current_sound:       .byte sound_freq_normal 
 
 history:     .fill 2048, 0
+
+
+* = $2000
+.import binary "snake.64c"
 
