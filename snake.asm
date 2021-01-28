@@ -7,8 +7,8 @@ BasicUpstart2(start)
 
 * = $1000
 
-.var r_start = 5
-.var r_end = 90
+.var raster_start = 0
+.var raster_end = 58
 
 .var sid =  $d400
 .var joy2 = $dc00
@@ -18,7 +18,7 @@ BasicUpstart2(start)
 .var joy_left =  %00000100;
 .var joy_right = %00001000;
 
-.var start_pos = $05f4
+.var start_pos = 1024+20+13*40
 .var start_speed = 20
 .var start_tail_length = $08
 
@@ -47,7 +47,7 @@ start:
        jsr place_mushroom
        jsr print_score
 
-loop:  lda #60
+loop:  lda #80
 !:     cmp $d012
        bne !-
 !:     cmp $d012
@@ -167,12 +167,18 @@ place_mushroom:
 !:     lda #$07
        
   place_mushroom_v:
-       sta place_mushroom_v+11
-       sta place_mushroom_v+20
        ldy sid+27
+
+       cmp #$04
+       bne !+
+       cpy #80
+       bcc place_mushroom
+       
+  !:   sta place_mushroom_v+19
+       sta place_mushroom_v+28
        lda $0000, y
        cmp #char_space
-       bne !----
+       bne place_mushroom
        lda #char_mushroom
        sta $0000, y
        rts
@@ -441,16 +447,16 @@ drawborder:
        jsr drawedges
        jsr drawbottom
   drawtop:
-       ldx #$00
-       ldy #$00
+       ldx #0
+       ldy #40
        lda #char_border
   extendtop:
        sta (sram_ptr),y
        iny
-       cpy #40
+       cpy #80
        bne extendtop
        sta (sram_ptr),y
-       ldx #$00
+       ldx #0
        rts
   drawedges:
        clc
@@ -458,7 +464,7 @@ drawborder:
        adc #39
        sta sram_ptr
        lda sram_ptr+1
-       adc #$00
+       adc #0
        sta sram_ptr+1
        lda #char_border
        sta (sram_ptr),y
@@ -467,12 +473,12 @@ drawborder:
        adc #01
        sta sram_ptr
        lda sram_ptr+1
-       adc #$00
+       adc #0
        sta sram_ptr+1
        lda #char_border
        sta (sram_ptr),y
        inx
-       cpx #23
+       cpx #22
        bcc drawedges
        ldx #$00
        rts
@@ -520,7 +526,7 @@ setup_interrupt:
            lda $dc0d            //acknowledge pending interrupts from CIA-1
            lda $dd0d            //acknowledge pending interrupts from CIA-2
 
-           lda #r_start             //set rasterline where interrupt shall occur
+           lda #raster_start    //set rasterline where interrupt shall occur
            sta $d012
 
            lda #<irq            //set interrupt vectors, pointing to interrupt service routine below
@@ -544,7 +550,7 @@ irq:
            lda #>irq2
            sta $0315
 
-           lda #r_end
+           lda #raster_end
            sta $d012            //next interrupt will occur at line no. 0
 
            asl $d019            //acknowledge the interrupt by clearing the VIC's interrupt flag
@@ -561,7 +567,7 @@ irq2:
            lda #>irq
            sta $0315
 
-           lda #r_start
+           lda #raster_start
            sta $d012            //next interrupt will occur at line no. 210
 
            asl $d019            //acknowledge the interrupt by clearing the VIC's interrupt flag
