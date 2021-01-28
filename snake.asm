@@ -3,7 +3,7 @@
   .eval brkFile.writeln("break " + toHexString(*))
 }
 
-BasicUpstart2(start)
+BasicUpstart2(start_game)
 
 * = $1000
 
@@ -18,9 +18,10 @@ BasicUpstart2(start)
 .var joy_left =  %00000100;
 .var joy_right = %00001000;
 
-.var start_pos = 1024+20+13*40
+.var start_pos = 1024+20+12*40
 .var start_speed = 20
 .var start_tail_length = $08
+.var start_mushroom_count = 3
 
 .var char_player = 28
 .var char_border = 27
@@ -41,8 +42,12 @@ BasicUpstart2(start)
 .var tail_history_ptr = $fd
 .var temp_ptr = $39
 
-start: 
-       jsr init
+.var exit_position = 1024+20+40
+
+start_game: 
+       jsr init_game
+start_level:
+       jsr init_level
        jsr drawborder
        jsr place_mushroom
        jsr print_score
@@ -55,7 +60,9 @@ loop:  lda #80
 
        jsr check_joystick
 
-       dec counter
+  
+       
+!:     dec counter
        bne loop
        lda speed
        sta counter
@@ -64,11 +71,24 @@ loop:  lda #80
        jsr update_head_history
        jsr update_tail_history
        jsr check_collision
-       
-       jsr beep
+
+       lda mushroom_count
+       bne !+
+       lda #<exit_position
+       sta temp_ptr;
+       lda #>exit_position
+       sta temp_ptr+1;
+       ldy #0
+       lda (temp_ptr),y
+       ora #$30
+       sta (temp_ptr),y
+
+!:     jsr beep
        jsr draw_player
 
        jsr print_score
+       jsr print_mushroom_count
+       jsr print_level
 
        lda speed
        cmp #5
@@ -77,14 +97,25 @@ loop:  lda #80
 
        jmp loop
 
-init:  
+init_game:  
        lda #$18       // relocate charset
        sta $d018
 
        jsr setup_interrupt
-
        jsr initsid
-  
+
+       lda #1
+       sta level
+
+       lda #0
+       sta $d020
+       sta $d021
+       sta score
+       sta score+1
+
+       rts
+
+init_level:  
        jsr $e544
 
        lda #$00
@@ -92,11 +123,8 @@ init:
        ldx $0288
        stx sram_ptr+1
 
-       lda #0
-       sta $d020
-       sta $d021
-       sta score
-       sta score+1
+       lda #start_mushroom_count
+       sta mushroom_count
 
        lda #<start_pos
        ldx #>start_pos
@@ -187,7 +215,18 @@ check_collision:
        lda #sound_freq_normal 
        sta current_sound
 
-       ldy #$00
+       ldy #>exit_position
+       cpy sram_ptr+1
+       bne !+
+
+       ldy #<exit_position
+       cpy sram_ptr
+       bne !+
+
+       inc level
+       jmp start_level
+
+!:     ldy #$00
        lda (sram_ptr),y
 
        cmp #char_space
@@ -200,6 +239,9 @@ check_collision:
        rts
 
 !:     jmp game_over
+
+next_level:
+       inc level
 
 mushroom_hit:
        lda #sound_freq_score 
@@ -214,7 +256,15 @@ mushroom_hit:
        adc #0
        sta score+1
 
-       lda sid+27
+       dec mushroom_count
+       bne !+
+
+       jsr open_exit
+       jmp !++
+       
+!:     jsr place_mushroom
+
+!:     lda sid+27
        clc
        ror
        clc
@@ -227,8 +277,6 @@ mushroom_hit:
        ror
        sta tail_growth
 
-       jsr place_mushroom
-
 !:     rts
 
 game_over:
@@ -240,7 +288,7 @@ game_over:
        dec $d021
        jsr $ffe4
        beq !-
-       jmp start
+       jmp start_game
 
 check_joystick:
   check_joystick_right:
@@ -495,24 +543,73 @@ drawborder:
        inx
        cpx #39
        bcc drawbottom
-  drawscoretitle:
+  drawlabels:
        ldx #0
     !: lda score_label,x
-       sta $0410,x
+       sta $0400,x
        inx
-       cpx #7
+       cpx #6
        bne !-
+
+       ldx #0
+    !: lda mushroom_label,x
+       sta $040e,x
+       inx
+       cpx #10
+       bne !-
+
+       ldx #0
+    !: lda level_label,x
+       sta $0420,x
+       inx
+       cpx #6
+       bne !-
+
        rts
 
 print_score:
        clc
        ldx #0
-       ldy #22
+       ldy #7
        jsr $fff0
 
        lda score+1
        ldx score
        jsr $bdcd
+       rts
+
+print_mushroom_count:
+       clc
+       ldx #0
+       ldy #25
+       jsr $fff0
+
+       lda mushroom_count+1
+       ldx mushroom_count
+       jsr $bdcd
+       rts
+
+print_level:
+       clc
+       ldx #0
+       ldy #39
+       jsr $fff0
+
+       lda level+1
+       ldx level
+       jsr $bdcd
+       rts
+
+open_exit:
+       lda #<exit_position
+       sta temp_ptr
+       lda #>exit_position
+       sta temp_ptr+1
+
+       lda #char_space
+       ldy #0
+       sta (temp_ptr), y
+ 
        rts
 
 setup_interrupt:
@@ -583,7 +680,11 @@ counter:             .byte $01
 speed:               .byte start_speed
 tail_growth:         .byte start_tail_length
 score_label:         .text "score:"
+level_label:         .text "level:"
+mushroom_label:      .text "mushrooms:"
 current_sound:       .byte sound_freq_normal 
+mushroom_count:      .word 0
+level:               .word 1
 
 history:     .fill 2048, 0
 
