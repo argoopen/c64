@@ -13,10 +13,10 @@ BasicUpstart2(start_game)
 .var sid =  $d400
 .var joy2 = $dc00
 
-.var joy_up =    %00000001;
-.var joy_down =  %00000010;
-.var joy_left =  %00000100;
-.var joy_right = %00001000;
+.var joy_up =    %00000001//
+.var joy_down =  %00000010//
+.var joy_left =  %00000100//
+.var joy_right = %00001000//
 
 .var start_pos = 1024+20+12*40
 .var start_speed = 20
@@ -24,6 +24,7 @@ BasicUpstart2(start_game)
 .var start_mushroom_count = 3
 
 .var char_player = 28
+.var char_player_head = 29
 .var char_border = 27
 .var char_mushroom = 0
 .var char_space = 32
@@ -33,14 +34,13 @@ BasicUpstart2(start_game)
 .var dir_down = 3
 .var dir_left = 4
 
-.var sound_freq_normal = 20
-.var sound_freq_score = 60
-.var sound_freq_crash = 100
-
 .var sram_ptr = $bb
+.var cram_ptr = $77
 .var head_history_ptr = $fb
 .var tail_history_ptr = $fd
 .var temp_ptr = $39
+.var sfx1_ptr = $73
+.var sfx2_ptr = $75
 
 .var exit_position = 1024+20+40
 
@@ -48,7 +48,7 @@ start_game:
        jsr init_game
 start_level:
        jsr init_level
-       jsr drawborder
+       jsr draw_border
        jsr place_mushroom
        jsr print_score
 
@@ -58,11 +58,10 @@ loop:  lda #80
 !:     cmp $d012
        beq !-
 
+       jsr play_sfx
        jsr check_joystick
-
-  
        
-!:     dec counter
+       dec counter
        bne loop
        lda speed
        sta counter
@@ -75,15 +74,15 @@ loop:  lda #80
        lda mushroom_count
        bne !+
        lda #<exit_position
-       sta temp_ptr;
+       sta temp_ptr//
        lda #>exit_position
-       sta temp_ptr+1;
+       sta temp_ptr+1//
        ldy #0
        lda (temp_ptr),y
        ora #$30
        sta (temp_ptr),y
 
-!:     jsr beep
+!:     
        jsr draw_player
 
        jsr print_score
@@ -102,7 +101,6 @@ init_game:
        sta $d018
 
        jsr setup_interrupt
-       jsr initsid
 
        lda #1
        sta level
@@ -112,6 +110,16 @@ init_game:
        sta $d021
        sta score
        sta score+1
+       sta sfx1_ptr
+       sta sfx1_ptr+1
+       sta sfx2_ptr
+       sta sfx2_ptr+1
+
+       lda #$ff
+       sta sid+14
+       sta sid+15
+       lda #$80
+       sta sid+18
 
        rts
 
@@ -153,27 +161,6 @@ init_level:
 
        rts
 
-initsid:
-       lda #0
-       ldy #24
-!:     sta sid,y
-       dey
-       bpl !-
-
-       lda #9   // attack v1
-       sta sid+5
-       lda #30 // sustain v1
-       sta sid+15
-       lda #%00001111 // volume (low 4 bits)
-       sta sid+24
-
-       lda #$ff
-       sta sid+14
-       sta sid+15
-       lda #$80
-       sta sid+18
-       rts
-
 place_mushroom:
 !:     ldy sid+27
 
@@ -209,12 +196,20 @@ place_mushroom:
        bne place_mushroom
        lda #char_mushroom
        sta $0000, y
+
+       clc
+       lda place_mushroom_v+19
+       adc #$d4
+       sta cram_ptr+1
+       lda #0
+       sta cram_ptr
+    
+       lda #%00001001
+       sta (cram_ptr), y
+       
        rts
 
 check_collision:
-       lda #sound_freq_normal 
-       sta current_sound
-
        ldy #>exit_position
        cpy sram_ptr+1
        bne !+
@@ -224,7 +219,13 @@ check_collision:
        bne !+
 
        inc level
-       jmp start_level
+
+       lda #<sfx_end_level
+       sta sfx1_ptr
+       lda #>sfx_end_level
+       sta sfx1_ptr+1
+
+       jmp exit_anim
 
 !:     ldy #$00
        lda (sram_ptr),y
@@ -242,11 +243,9 @@ check_collision:
 
 next_level:
        inc level
+       jmp start_level
 
 mushroom_hit:
-       lda #sound_freq_score 
-       sta current_sound
-
        clc
        lda score
        adc #10
@@ -277,13 +276,14 @@ mushroom_hit:
        ror
        sta tail_growth
 
+       lda #<sfx_score
+       sta sfx2_ptr
+       lda #>sfx_score
+       sta sfx2_ptr+1
+
 !:     rts
 
 game_over:
-       lda #sound_freq_crash
-       sta current_sound
-       jsr beep
-
 !:     inc $d020
        dec $d021
        jsr $ffe4
@@ -319,6 +319,10 @@ check_joystick:
        rts
 
 move_player: 
+       lda #char_player
+       ldy #$00
+       sta (sram_ptr),y
+
   move_player_right:
        lda player_dir
        cmp #dir_right
@@ -359,7 +363,6 @@ move_player:
        lda player_dir
        cmp #dir_down
        bne move_player_update_pos
-
        clc
        lda head_pos
        adc #40
@@ -369,13 +372,17 @@ move_player:
        sta head_pos+1
   move_player_update_pos:
        ldx #$00
-  
        lda head_pos
        sta sram_ptr
        lda head_pos+1
        sta sram_ptr+1
 
-       rts
+       lda #<sfx_move
+       sta sfx1_ptr
+       lda #>sfx_move
+       sta sfx1_ptr+1
+
+!:     rts
 
 update_head_history:
        ldy #0
@@ -474,76 +481,173 @@ clear_tail:
 
        rts
 
+exit_anim:
+       ldx #32
+       lda #0
+       jsr sound1
+       jsr sound2
+exit_anim_loop:
+       lda #80
+!:     cmp $d012
+       bne !-
+!:     cmp $d012
+       beq !-
+
+       dec counter
+       bne exit_anim
+       lda speed
+       sta counter
+
+       jsr clear_tail
+
+       txa
+       ora #%01000000
+       jsr sound1
+       cpx #%00100000
+       bne !+
+       inx
+
+!:     lda tail_history_ptr
+       cmp head_history_ptr
+       bne !+
+
+       lda tail_history_ptr+1
+       cmp head_history_ptr+1
+       bne !+
+
+       jmp next_level
+
+!:     clc
+       lda tail_history_ptr
+       adc #2
+       sta tail_history_ptr
+       lda tail_history_ptr+1
+       adc #0
+       sta tail_history_ptr+1
+
+       lda speed
+       cmp #5
+       beq exit_anim_loop
+       dec speed
+
+       jmp exit_anim_loop
+
 draw_player: 
-       lda #char_player
+       lda #char_player_head
        ldy #$00
        sta (sram_ptr),y
+
+       clc
+       lda sram_ptr+1
+       adc #$d4
+       sta sram_ptr+1
+
+       lda #%00001011
+       sta (sram_ptr),y
+ 
+       lda sram_ptr+1
+       sec
+       sbc #$d4
+       sta sram_ptr+1
       
        rts
 
-beep:   
-       lda current_sound
-       sta sid+1
-       lda #%00010100
-       sta sid+4
-       lda #%00010101
-       sta sid+4
+draw_border:
+       // top
+       lda #$28
+       sta sram_ptr
+       lda #$04
+       sta sram_ptr+1
+       ldx #40
+       jsr draw_wall_horizontal
+
+       // bottom
+       lda #$c0
+       sta sram_ptr
+       lda #$07
+       sta sram_ptr+1
+       ldx #40
+       jsr draw_wall_horizontal
+
+       // left
+       lda #$50
+       sta sram_ptr
+       lda #$04
+       sta sram_ptr+1
+       ldx #22
+       jsr draw_wall_vertical
+
+       // right
+       lda #$77
+       sta sram_ptr
+       lda #$04
+       sta sram_ptr+1
+       ldx #22
+       jsr draw_wall_vertical
+
+       jsr draw_labels
+
        rts
 
-drawborder:
-       jsr drawtop
-       jsr drawedges
-       jsr drawbottom
-  drawtop:
-       ldx #0
-       ldy #40
+draw_wall_horizontal:
        lda #char_border
-  extendtop:
-       sta (sram_ptr),y
-       iny
-       cpy #80
-       bne extendtop
-       sta (sram_ptr),y
-       ldx #0
-       rts
-  drawedges:
+       ldy #0
+       sta (sram_ptr), y
+
+       clc
+       lda sram_ptr+1
+       adc #$d4
+       sta sram_ptr+1
+       lda #%00001001
+       sta (sram_ptr), y
+
+       lda sram_ptr+1
+       sec
+       sbc #$d4
+       sta sram_ptr+1
+
        clc
        lda sram_ptr
-       adc #39
+       adc #1
        sta sram_ptr
        lda sram_ptr+1
        adc #0
        sta sram_ptr+1
+
+       dex
+       bne draw_wall_horizontal
+       rts
+   
+draw_wall_vertical:
        lda #char_border
-       sta (sram_ptr),y
+       ldy #0
+       sta (sram_ptr), y
+
        clc
-       lda sram_ptr 
-       adc #01
+       lda sram_ptr+1
+       adc #$d4
+       sta sram_ptr+1
+       lda #%00001001
+       sta (sram_ptr), y
+
+       lda sram_ptr+1
+       sec
+       sbc #$d4
+       sta sram_ptr+1
+
+       clc
+       lda sram_ptr
+       adc #40
        sta sram_ptr
        lda sram_ptr+1
        adc #0
        sta sram_ptr+1
-       lda #char_border
-       sta (sram_ptr),y
-       inx
-       cpx #22
-       bcc drawedges
-       ldx #$00
+
+       dex
+       bne draw_wall_vertical
        rts
-  drawbottom:
-       clc
-       lda sram_ptr
-       adc #01
-       sta sram_ptr
-       lda sram_ptr+1
-       adc #$00
-       sta sram_ptr+1
-       lda #char_border
-       sta (sram_ptr),y
-       inx
-       cpx #39
-       bcc drawbottom
-  drawlabels:
+   
+draw_labels:
        ldx #0
     !: lda score_label,x
        sta $0400,x
@@ -671,6 +775,136 @@ irq2:
 
            jmp $ea31            //jump into KERNAL's standard interrupt service routine to handle keyboard scan, cursor display etc.
 
+play_sfx: 
+          // Channel 1
+          lda sfx1_ptr
+          bne !+
+          lda sfx1_ptr+1
+          bne !+
+          rts
+
+!:        ldy #0
+          lda (sfx1_ptr),y
+
+          jsr sound1
+
+          bne !+
+
+          ldy #$00
+          sty sfx1_ptr
+          sty sfx1_ptr+1
+          rts
+
+!:        
+          clc
+          lda sfx1_ptr
+          adc #01
+          sta sfx1_ptr
+          lda sfx1_ptr+1
+          adc #$00
+          sta sfx1_ptr+1
+
+          // Channel 2
+          lda sfx2_ptr
+          bne !+
+          lda sfx2_ptr+1
+          bne !+
+          rts
+
+!:        ldy #0
+          lda (sfx2_ptr),y
+
+          jsr sound2
+
+          bne !+
+
+          ldy #$00
+          sty sfx2_ptr
+          sty sfx2_ptr+1
+          rts
+
+!:        
+          clc
+          lda sfx2_ptr
+          adc #01
+          sta sfx2_ptr
+          lda sfx2_ptr+1
+          adc #$00
+          sta sfx2_ptr+1
+
+          rts
+
+sound1:     //NVPPPPPP - N=Noise V=Volume P=Pitch
+    pha
+        and #%00111111  //Pitch bits
+        sta $D401       //HHHHHHHH   Voice #1 frequency H (Higher values=higher pitch)
+    pla
+    beq sound1_off //See if sound is turned off
+
+    pha
+        and #%10000000  //Noise Bit
+        bne sound1_noise_done
+
+        lda #%01000000  //ChibiSound_NoNoise
+  sound1_noise_done:
+        ora #%00000001
+        sta $D404       //NPST-RSG   Voice #1 control register - Noise / Pulse / Sawtooth / Triangle / - test / Ring mod / Sync /Gate
+
+        ldx #0
+        stx $D402       //LLLLLLLL   Voice #1 pulse width L
+        stx $D405       //AAAADDDD   Voice #1 Attack and Decay length - Atack / Decay
+        dex //255
+        stx $D400       //LLLLLLLL   Voice #1 frequency L
+        stx $D403       //----HHHH   Voice #1 pulse width H
+        stx $D406       //SSSSRRRR   Voice #1 Sustain volume and Release length - Sustain  / Release
+
+    pla
+    and #%01000000      //Volume bit -V------
+    lsr
+    lsr
+    lsr
+    ora #%00000111      //Move to   -----V111
+
+  sound1_off:
+    sta $D418           //MHBLVVVV   Volume and filter modes - Mute3 / Highpass / Bandpass / Lowpass / Volume (0=silent)
+    rts
+
+sound2:     //NVPPPPPP - N=Noise V=Volume P=Pitch
+    pha
+        and #%00111111  //Pitch bits
+        sta $d408       //HHHHHHHH   Voice #1 frequency H (Higher values=higher pitch)
+    pla
+    beq sound2_off //See if sound is turned off
+
+    pha
+        and #%10000000  //Noise Bit
+        bne sound1_noise_done
+
+        lda #%01000000  //ChibiSound_NoNoise
+  sound2_noise_done:
+        ora #%00000001
+        sta $d40b       //NPST-RSG   Voice #1 control register - Noise / Pulse / Sawtooth / Triangle / - test / Ring mod / Sync /Gate
+
+        ldx #0
+        stx $D409       //LLLLLLLL   Voice #1 pulse width L
+        stx $D40c       //AAAADDDD   Voice #1 Attack and Decay length - Atack / Decay
+        dex //255
+        stx $D407       //LLLLLLLL   Voice #1 frequency L
+        stx $D40a       //----HHHH   Voice #1 pulse width H
+        stx $D40d       //SSSSRRRR   Voice #1 Sustain volume and Release length - Sustain  / Release
+
+    pla
+    and #%01000000      //Volume bit -V------
+    lsr
+    lsr
+    lsr
+    ora #%00000111      //Move to   -----V111
+
+  sound2_off:
+    sta $D418           //MHBLVVVV   Volume and filter modes - Mute3 / Highpass / Bandpass / Lowpass / Volume (0=silent)
+    rts
+
+
 score:               .word 0
 head_pos:            .word start_pos
 tail_pos:            .word start_pos
@@ -682,9 +916,26 @@ tail_growth:         .byte start_tail_length
 score_label:         .text "score:"
 level_label:         .text "level:"
 mushroom_label:      .text "mushrooms:"
-current_sound:       .byte sound_freq_normal 
 mushroom_count:      .word 0
 level:               .word 1
+current_freq:        .byte 128
+sfx_move:            .fill 2, %01001000
+                     .fill 2, %01010000
+                     .fill 2, %01100000
+                     .byte 0
+sfx_score:           .fill 5, %01000001
+                     .fill 5, %01000010
+                     .fill 5, %01000100
+                     .fill 5, %01001000
+                     .fill 5, %01010000
+                     .byte 0
+sfx_end_level:       .fill 2, %01000000
+                     .fill 2, %01000100
+                     .fill 2, %01001000
+                     .fill 2, %01010000
+                     .fill 2, %01100000
+                     .byte 0
+exit_locations:      .word 1024+20+40, 0
 
 history:     .fill 2048, 0
 
