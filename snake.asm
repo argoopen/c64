@@ -21,7 +21,7 @@ BasicUpstart2(start_game)
 .var start_pos = 1024+20+12*40
 .var start_speed = 20
 .var start_tail_length = $08
-.var start_mushroom_count = 3
+.var start_mushroom_count = 1
 
 .var char_player = 28
 .var char_player_head = 29
@@ -41,8 +41,6 @@ BasicUpstart2(start_game)
 .var temp_ptr = $39
 .var sfx1_ptr = $73
 .var sfx2_ptr = $75
-
-.var exit_position = 1024+20+40
 
 start_game: 
        jsr init_game
@@ -71,19 +69,9 @@ loop:  lda #80
        jsr update_tail_history
        jsr check_collision
 
-       lda mushroom_count
-       bne !+
-       lda #<exit_position
-       sta temp_ptr//
-       lda #>exit_position
-       sta temp_ptr+1//
-       ldy #0
-       lda (temp_ptr),y
-       ora #$30
-       sta (temp_ptr),y
-
-!:     
        jsr draw_player
+
+       jsr check_exit
 
        jsr print_score
        jsr print_mushroom_count
@@ -209,13 +197,27 @@ place_mushroom:
        
        rts
 
-check_collision:
-       ldy #>exit_position
-       cpy sram_ptr+1
+check_exit:
+       ldx #0
+
+!:     lda exit_locations, x
+       bne !+
+       inx
+       lda exit_locations, x
+       dex
+       cmp #0
+       beq !+
+
+       rts
+
+!:     lda exit_locations, x
+       cmp sram_ptr
        bne !+
 
-       ldy #<exit_position
-       cpy sram_ptr
+       inx
+
+       lda exit_locations, x
+       cmp sram_ptr+1
        bne !+
 
        inc level
@@ -227,6 +229,10 @@ check_collision:
 
        jmp exit_anim
 
+  !:   inx
+       jmp !---
+
+check_collision:
 !:     ldy #$00
        lda (sram_ptr),y
 
@@ -258,7 +264,7 @@ mushroom_hit:
        dec mushroom_count
        bne !+
 
-       jsr open_exit
+       jsr open_exits
        jmp !++
        
 !:     jsr place_mushroom
@@ -704,17 +710,32 @@ print_level:
        jsr $bdcd
        rts
 
-open_exit:
-       lda #<exit_position
+open_exits:
+       ldx #0
+!:     lda exit_locations, x
+       bne !+
+
+       inx 
+       lda exit_locations, x
+       bne !+
+
+       rts
+
+       dex
+
+!:     lda exit_locations, x
        sta temp_ptr
-       lda #>exit_position
+       inx
+       lda exit_locations, x
        sta temp_ptr+1
 
        lda #char_space
        ldy #0
        sta (temp_ptr), y
+
+       inx
  
-       rts
+       jmp !--
 
 setup_interrupt:
            sei                  //set interrupt bit, make the CPU ignore interrupt requests
@@ -935,7 +956,11 @@ sfx_end_level:       .fill 2, %01000000
                      .fill 2, %01010000
                      .fill 2, %01100000
                      .byte 0
-exit_locations:      .word 1024+20+40, 0
+exit_locations:      .word 1024+20+40   
+                     .word 1024+12*40   
+                     .word 1024+39+12*40   
+                     .word 1024+24*40+20
+                     .word 0
 
 history:     .fill 2048, 0
 
