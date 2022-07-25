@@ -6,18 +6,19 @@ DEBUGGER=/Applications/C64\ Debugger.app/Contents/MacOS/C64\ Debugger
 NAME=game1
 
 vice: $(NAME).prg
-	$(VICE) $<
+	$(VICE) -moncommands $(NAME).vs $<
 
 debug: $(NAME).prg
 	$(DEBUGGER) $<
 
-$(NAME).prg: main.asm
-	$(KICKASS) main.asm -o $(NAME).prg -showmem -vicesymbols
+$(NAME).prg: $(NAME).asm
+	$(KICKASS) $(NAME).asm -o $(NAME).prg -showmem -vicesymbols -debugdump
 
 $(NAME).d64: $(NAME).prg
 	$(C1541) -format $(NAME),8 d64 $(NAME).d64 -attach $(NAME).d64 -write $(NAME).prg
 
 clean:
+	rm -f $(NAME).dbg
 	rm -f $(NAME).prg
 	rm -f $(NAME).vs
 	rm -f $(NAME).d64
