@@ -21,7 +21,6 @@ BasicUpstart2(start_game)
 .var start_pos = 1024+20+12*40
 .var start_speed = 20
 .var start_tail_length = $08
-.var start_mushroom_count = 1
 
 .var char_player = 28
 .var char_player_head = 29
@@ -46,9 +45,11 @@ start_game:
        jsr init_game
 start_level:
        jsr init_level
-       jsr draw_border
+       jsr draw_walls
        jsr place_mushroom
        jsr print_score
+       jsr print_mushroom_count_target
+       jsr print_mushroom_count_hit
 
 loop:  lda #80
 !:     cmp $d012
@@ -65,6 +66,7 @@ loop:  lda #80
        sta counter
 
        jsr move_player
+
        jsr update_head_history
        jsr update_tail_history
        jsr check_collision
@@ -74,11 +76,13 @@ loop:  lda #80
        jsr check_exit
 
        jsr print_score
-       jsr print_mushroom_count
        jsr print_level
 
        lda speed
-       cmp #5
+ 
+       ldy level
+       dey
+       cmp level_max_speeds, y
        beq loop
        dec speed
 
@@ -109,6 +113,9 @@ init_game:
        lda #$80
        sta sid+18
 
+       lda #dir_right
+       sta player_dir
+
        rts
 
 init_level:  
@@ -119,8 +126,13 @@ init_level:
        ldx $0288
        stx sram_ptr+1
 
-       lda #start_mushroom_count
-       sta mushroom_count
+       lda #start_speed
+       sta speed
+
+       ldy level
+       dey
+       lda level_mushrooms, y
+       sta mushrooms_left
 
        lda #<start_pos
        ldx #>start_pos
@@ -131,10 +143,6 @@ init_level:
 
        sta player_history_head
        stx player_history_head+1
-       lda #dir_right
-       sta player_dir
-       lda #start_speed
-       sta speed
        lda #start_tail_length
        sta tail_growth
 
@@ -200,13 +208,14 @@ place_mushroom:
 check_exit:
        ldx #0
 
-!:     lda exit_locations, x
+!:     
+       lda exit_locations, x
        bne !+
        inx
        lda exit_locations, x
        dex
        cmp #0
-       beq !+
+       bne !+
 
        rts
 
@@ -217,10 +226,9 @@ check_exit:
        inx
 
        lda exit_locations, x
+       dex
        cmp sram_ptr+1
        bne !+
-
-       inc level
 
        lda #<sfx_end_level
        sta sfx1_ptr
@@ -230,6 +238,7 @@ check_exit:
        jmp exit_anim
 
   !:   inx
+       inx
        jmp !---
 
 check_collision:
@@ -261,7 +270,9 @@ mushroom_hit:
        adc #0
        sta score+1
 
-       dec mushroom_count
+       dec mushrooms_left
+       jsr print_mushroom_count_hit
+       lda mushrooms_left
        bne !+
 
        jsr open_exits
@@ -488,6 +499,9 @@ clear_tail:
        rts
 
 exit_anim:
+       lda #5
+       sta speed
+
        ldx #32
        lda #0
        jsr sound1
@@ -558,7 +572,7 @@ draw_player:
       
        rts
 
-draw_border:
+draw_walls:
        // top
        lda #$28
        sta sram_ptr
@@ -590,6 +604,43 @@ draw_border:
        sta sram_ptr+1
        ldx #22
        jsr draw_wall_vertical
+
+       // Level 2 walls
+       lda level
+       cmp #2
+       bne !+
+       lda #$cd
+       sta sram_ptr
+       lda #$04
+       sta sram_ptr+1
+       ldx #29
+       jsr draw_wall_horizontal
+       jmp !+
+
+!:     // Level 3 walls
+       lda level
+       cmp #3
+       bne !+
+
+       lda #$f5
+       sta sram_ptr
+       lda #$04
+       sta sram_ptr+1
+       ldx #29
+       jsr draw_wall_horizontal
+
+       lda #$fd
+       sta sram_ptr
+       lda #$06
+       sta sram_ptr+1
+       ldx #29
+       jsr draw_wall_horizontal
+       jmp !+
+
+!:     lda #<start_pos
+       ldx #>start_pos
+       sta sram_ptr
+       stx sram_ptr+1
 
        jsr draw_labels
 
@@ -688,14 +739,35 @@ print_score:
        jsr $bdcd
        rts
 
-print_mushroom_count:
+print_mushroom_count_hit:
        clc
        ldx #0
-       ldy #25
+       ldy #24
        jsr $fff0
 
-       lda mushroom_count+1
-       ldx mushroom_count
+       sec
+       ldx level
+       dex
+       lda level_mushrooms, x
+       sbc mushrooms_left
+       tax 
+       lda mushrooms_left+1
+
+       jsr $bdcd
+
+       rts
+
+print_mushroom_count_target:
+       clc 
+       lda #'/'
+       sta 1024+25
+
+       ldx #0
+       ldy #26
+       jsr $fff0
+
+       lda mushrooms_left+1
+       ldx mushrooms_left
        jsr $bdcd
        rts
 
@@ -937,7 +1009,7 @@ tail_growth:         .byte start_tail_length
 score_label:         .text "score:"
 level_label:         .text "level:"
 mushroom_label:      .text "mushrooms:"
-mushroom_count:      .word 0
+mushrooms_left:      .word 0
 level:               .word 1
 current_freq:        .byte 128
 sfx_move:            .fill 2, %01001000
@@ -963,6 +1035,9 @@ exit_locations:      .word 1024+20+40
                      .word 0
 
 history:     .fill 2048, 0
+
+level_max_speeds:    .byte 5, 4, 3, 2, 1, 1, 5, 5, 5, 5
+level_mushrooms:     .byte 1, 3, 5, 5, 7, 7, 12, 12, 15, 15
 
 
 * = $2000
