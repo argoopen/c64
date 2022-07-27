@@ -23,8 +23,13 @@ PLAYER: {
     JumpPattern:         .fill 20,round(32*sin(toRadians(i*360/40)))
     JumpFrame:           .byte 0
 
-    ScreenRowLSB:        .fill 25, <[$0400 + i * 40]
-    ScreenRowMSB:        .fill 25, >[$0400 + i * 40]
+    ScreenRowLSB:        .fill 25, <[SCREEN_RAM + i * 40]
+    ScreenRowMSB:        .fill 25, >[SCREEN_RAM + i * 40]
+    .var ScreenRowOffsetX = 6
+    .var ScreenRowOffsetY = 23
+
+    ColourRowLSB:        .fill 25, <[COLOUR_RAM + i * 40]
+    ColourRowMSB:        .fill 25, >[COLOUR_RAM + i * 40]
 
     ScreenLocation:      .word $0000
     ColourLocation:      .word $0000
@@ -109,14 +114,24 @@ PLAYER: {
     }
 
     UpdateScreenLocation: {
-lda #4
-sta $0400
-        lda #<SCREEN_RAM
+        lda YPos
+        sec
+        sbc #ScreenRowOffsetY
+
+        lsr
+        lsr
+        lsr
+        tay
+        lda ScreenRowLSB, y 
         sta ScreenLocation
-        lda #>SCREEN_RAM
+
+        lda ScreenRowMSB, y 
         sta ScreenLocation+1
 
         lda XPos
+        sec
+        sbc #ScreenRowOffsetX
+        
         lsr
         lsr
         clc
@@ -126,22 +141,35 @@ sta $0400
         adc #0
         sta ScreenLocation+1
  
+        rts 
+
+/*
         lda ScreenLocation
         sta tmp1
         lda ScreenLocation+1
         sta tmp1+1
 
+        lda #16
         ldy #0
+        sta (tmp1), y
 
-.break
-        sta (tmp1), x
 
-        lda #<COLOUR_RAM
+        lda YPos
+        sec
+        sbc #ScreenRowOffsetY
+        lsr
+        lsr
+        lsr
+        tay
+        lda ColourRowLSB, y
         sta ColourLocation
-        lda #>COLOUR_RAM
+
+        lda ColourRowMSB, y
         sta ColourLocation+1
 
         lda XPos
+        sec
+        sbc #ScreenRowOffsetX
         lsr
         lsr
         clc
@@ -152,15 +180,16 @@ sta $0400
         sta ColourLocation+1
  
         lda ColourLocation
-        sta tmp2
+        sta tmp1
         lda ColourLocation+1
-        sta tmp2+1
+        sta tmp1+1
 
         lda #06
         ldy #00
-        sta (tmp2), y
+        sta (tmp1), y
 
         rts
+*/
     }
 
     CheckJoystick: {
@@ -174,22 +203,22 @@ sta $0400
           inc CurrentFrame
           lda CurrentFrame
           cmp #$20
-          bne check_joystick_fire
+          bne check_joystick_up
           lda #$00
           sta CurrentFrame
-          jmp check_joystick_fire
+          jmp check_joystick_up
 
         check_joystick_left:
           lda JOY2
           and #JOY_LEFT
-          bne check_joystick_fire
+          bne check_joystick_up
           lda #DIR_LEFT
           sta Direction
           dec XPos
           inc CurrentFrame
           lda CurrentFrame
           cmp #$20
-          bne check_joystick_fire
+          bne check_joystick_up
           lda #$00
           sta CurrentFrame
 
@@ -210,16 +239,13 @@ sta $0400
           and #JOY_FIRE
           bne !+
 
-.break
-          
           lda JumpFrame
           bne !+
 
           lda #1
           sta JumpFrame
  
-        !:
-        rts
+        !: rts
     }
   
 }
