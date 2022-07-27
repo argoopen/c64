@@ -5,4 +5,6 @@ VIC: {
     .label BACKGROUND_COLOR = $d021
 
     .label COLOR_RAM = $d800
+
+    .label SPRITE_MSB = $d010
 }
