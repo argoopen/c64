@@ -36,6 +36,8 @@ Loop:
     jsr PLAYER.CheckJoystick
     jsr PLAYER.Render
 
+    jsr PLAYER.CheckCollisions
+
     jmp Loop
 
 #import "assets.asm"

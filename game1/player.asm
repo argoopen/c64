@@ -13,20 +13,22 @@ PLAYER: {
     .var JOY_FIRE =  %00010000
 
     XPos:                .byte $28
-    YPos:                .byte $8e
+//    YPos:              .byte $8e
+    YPos:                .byte $4e
     YPosIncJump:         .byte $8e
     Direction:           .byte DIR_RIGHT
     CurrentFrame:        .byte 0
     CurrentSprite:       .byte 0
 
-    .var JumpFrameCount = 20
-    JumpPattern:         .fill 20,round(32*sin(toRadians(i*360/40)))
+    JumpPattern:         .fill 20,round(40*sin(toRadians(i*360/40)))
+    __JumpPattern:
+
     JumpFrame:           .byte 0
 
     ScreenRowLSB:        .fill 25, <[SCREEN_RAM + i * 40]
     ScreenRowMSB:        .fill 25, >[SCREEN_RAM + i * 40]
-    .var ScreenRowOffsetX = 6
-    .var ScreenRowOffsetY = 23
+    .var ScreenRowOffsetX = 0
+    .var ScreenRowOffsetY = 8
 
     ColourRowLSB:        .fill 25, <[COLOUR_RAM + i * 40]
     ColourRowMSB:        .fill 25, >[COLOUR_RAM + i * 40]
@@ -81,7 +83,7 @@ PLAYER: {
 
         inc JumpFrame
         lda JumpFrame
-        cmp #JumpFrameCount
+        cmp #[__JumpPattern - JumpPattern - 1]
         bne !+
 
         lda #0
@@ -108,13 +110,59 @@ PLAYER: {
         adc CurrentSprite
         sta $07f8
 
-        jsr UpdateScreenLocation
-
         rts
     }
 
-    UpdateScreenLocation: {
-        lda YPos
+    CurrentCollisions:    .byte %00000000
+    CollisionTemp:        .byte %00000000
+    .var COLLISION_FLOOR =      %00000001
+
+    CheckCollisions: {
+        // Check foot 1
+        ldx #$08
+        ldy #$14
+        jsr CheckCollision
+        sta CollisionTemp
+sta $0400
+
+        // Check foot 2
+        ldx #$01
+        ldy #$14
+        jsr CheckCollision
+sta $0401
+
+        ora CollisionTemp
+
+        cmp #1
+
+        beq !+
+
+        // Clear foot collision
+        lda CurrentCollisions
+        and #[255-COLLISION_FLOOR]
+        sta CurrentCollisions
+
+        rts
+
+     !: // Set foot collision
+        lda CurrentCollisions
+        ora #COLLISION_FLOOR
+        sta CurrentCollisions
+        
+        rts
+    }
+
+    CheckCollision: {
+        // X has X sprite pixel offset
+        // Y has Y sprite pixel offset
+        stx tmp2
+        sty tmp1
+
+        lda YPos 
+
+        clc
+        sbc tmp1
+        
         sec
         sbc #ScreenRowOffsetY
 
@@ -129,6 +177,10 @@ PLAYER: {
         sta ScreenLocation+1
 
         lda XPos
+
+        clc
+        sbc tmp2
+        
         sec
         sbc #ScreenRowOffsetX
         
@@ -141,18 +193,29 @@ PLAYER: {
         adc #0
         sta ScreenLocation+1
  
-        rts 
-
-/*
         lda ScreenLocation
         sta tmp1
         lda ScreenLocation+1
         sta tmp1+1
 
-        lda #16
         ldy #0
-        sta (tmp1), y
+        lda (tmp1), y
+        cmp #0
 
+        beq !+
+
+        lda #1
+        rts
+
+     !: 
+        lda #0
+        rts
+
+//      lda #16
+//      ldy #0
+//      sta (tmp1), y
+
+rts
 
         lda YPos
         sec
@@ -189,7 +252,7 @@ PLAYER: {
         sta (tmp1), y
 
         rts
-*/
+
     }
 
     CheckJoystick: {
