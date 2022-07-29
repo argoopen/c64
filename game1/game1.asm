@@ -37,6 +37,7 @@ Loop:
     jsr PLAYER.Render
 
     jsr PLAYER.CheckCollisions
+    jsr PLAYER.JumpAndFall
 
     jmp Loop
 

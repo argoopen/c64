@@ -5,16 +5,22 @@ PLAYER: {
     .label tmp1 = $77
     .label tmp2 = $bb
 
-    .var JOY2 = $dc00
-    .var JOY_UP =    %00000001
-    .var JOY_DOWN =  %00000010
-    .var JOY_LEFT =  %00000100
+    .var JOY2      = $dc00
+    .var JOY_UP    = %00000001
+    .var JOY_DOWN  = %00000010
+    .var JOY_LEFT  = %00000100
     .var JOY_RIGHT = %00001000
-    .var JOY_FIRE =  %00010000
+    .var JOY_FIRE  = %00010000
+
+    .var XMIN      = $09
+    .var XMAX      = $a8
+
+    .var STATE_NORMAL  = $00
+    .var STATE_FALLING = $01
+    .var STATE_JUMPING = $02
 
     XPos:                .byte $28
-//    YPos:              .byte $8e
-    YPos:                .byte $4e
+    YPos:                .byte $50
     YPosIncJump:         .byte $8e
     Direction:           .byte DIR_RIGHT
     CurrentFrame:        .byte 0
@@ -23,7 +29,13 @@ PLAYER: {
     JumpPattern:         .fill 20,round(40*sin(toRadians(i*360/40)))
     __JumpPattern:
 
+//    FallPattern:         .fill 8,8-round(8*cos(toRadians(i*90/4)))
+    FallPattern:         .fill 10, 1
+    __FallPattern:
+
+    CurrentState:        .byte STATE_NORMAL
     JumpFrame:           .byte 0
+    JumpFallFrame:       .byte 0
 
     ScreenRowLSB:        .fill 25, <[SCREEN_RAM + i * 40]
     ScreenRowMSB:        .fill 25, >[SCREEN_RAM + i * 40]
@@ -262,6 +274,11 @@ rts
           bne check_joystick_left
           lda #DIR_RIGHT
           sta Direction
+
+          lda XPos
+          cmp #XMAX
+          bcs check_joystick_up
+
           inc XPos
           inc CurrentFrame
           lda CurrentFrame
@@ -275,6 +292,11 @@ rts
           lda JOY2
           and #JOY_LEFT
           bne check_joystick_up
+
+          lda XPos
+          cmp #XMIN
+          bcc check_joystick_up
+
           lda #DIR_LEFT
           sta Direction
           dec XPos
@@ -310,5 +332,40 @@ rts
  
         !: rts
     }
+
+    JumpAndFall: {
+        // Check for fall
+        lda CurrentCollisions
+        and #COLLISION_FLOOR 
   
+        bne !++
+
+        lda #STATE_FALLING
+        sta CurrentState
+
+        lda JumpFallFrame
+        cmp #[__FallPattern - FallPattern - 1]
+
+        beq !+
+
+        inc JumpFallFrame
+
+     !: ldy JumpFallFrame
+
+        clc
+        lda FallPattern, y
+
+        adc YPos
+        sta YPos
+
+        rts
+
+     !: lda #STATE_NORMAL
+        sta CurrentState
+
+        lda #0
+        sta JumpFallFrame
+
+        rts
+    }
 }

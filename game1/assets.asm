@@ -8,18 +8,18 @@
 .label COLOUR_RAM = $d800
 
 * = $3800 "Charset"
-.import binary "assets/chars.bin"
+.import binary "assets/maps - Chars.bin"
 
 * = $2000 "Sprites"
 .import binary "assets/sprites.bin"
 
 * = $8000 "Map data"
 MAP_TILES:
-    .import binary "assets/tiles.bin"
+    .import binary "assets/maps - Tiles.bin"
 
 CHAR_COLORS:
-    .import binary "assets/char-colours.bin"
+    .import binary "assets/maps - CharAttribs.bin"
 
 * = * "LEVEL DATA"
 MAP_1:
-    .import binary "assets/map1.bin"
+    .import binary "assets/maps - Map (20x12).bin"
