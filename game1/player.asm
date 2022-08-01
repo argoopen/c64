@@ -16,26 +16,30 @@ PLAYER: {
     .var XMAX      = $a8
 
     .var STATE_NORMAL  = $00
-    .var STATE_FALLING = $01
-    .var STATE_JUMPING = $02
+    .var STATE_FALLING = $07
+    .var STATE_JUMPING = $05
 
     XPos:                .byte $28
     YPos:                .byte $50
-    YPosIncJump:         .byte $8e
     Direction:           .byte DIR_RIGHT
     CurrentFrame:        .byte 0
     CurrentSprite:       .byte 0
 
-    JumpPattern:         .fill 20,round(40*sin(toRadians(i*360/40)))
+    JumpPatternX:         .fill 12,round(8*sin(toRadians(i*90/8)))
+    JumpPattern:         .fill 10, 2
     __JumpPattern:
 
-//    FallPattern:         .fill 8,8-round(8*cos(toRadians(i*90/4)))
-    FallPattern:         .fill 10, 1
+    FallPatternX:         .fill 12,8-round(8*cos(toRadians(i*90/8)))
+    FallPattern:         .fill 10, 2
     __FallPattern:
 
     CurrentState:        .byte STATE_NORMAL
     JumpFrame:           .byte 0
-    JumpFallFrame:       .byte 0
+    FallFrame:           .byte 0
+
+    CurrentCollisions:    .byte %00000000
+    CollisionTemp:        .byte %00000000
+    .var COLLISION_FLOOR =      %00000001
 
     ScreenRowLSB:        .fill 25, <[SCREEN_RAM + i * 40]
     ScreenRowMSB:        .fill 25, >[SCREEN_RAM + i * 40]
@@ -83,27 +87,7 @@ PLAYER: {
     !:  sta VIC.SPRITE_MSB
 
         lda YPos
-
-        ldx JumpFrame
-        cpx #0
-        beq !++
-
-        sec
-        sbc JumpPattern, x
-      
-        pha
-
-        inc JumpFrame
-        lda JumpFrame
-        cmp #[__JumpPattern - JumpPattern - 1]
-        bne !+
-
-        lda #0
-        sta JumpFrame
-
-     !: pla
-
-     !: sta $d001
+        sta $d001
 
         lda CurrentFrame
         sta CurrentSprite
@@ -124,10 +108,6 @@ PLAYER: {
 
         rts
     }
-
-    CurrentCollisions:    .byte %00000000
-    CollisionTemp:        .byte %00000000
-    .var COLLISION_FLOOR =      %00000001
 
     CheckCollisions: {
         // Check foot 1
@@ -320,52 +300,112 @@ rts
           inc YPos
 
         check_joystick_fire:
+          lda CurrentState
+          cmp #STATE_NORMAL
+          bne !+
+ 
           lda JOY2
           and #JOY_FIRE
           bne !+
 
-          lda JumpFrame
-          bne !+
+          lda #STATE_JUMPING
+          sta CurrentState
 
-          lda #1
+          lda #0
           sta JumpFrame
- 
+
         !: rts
     }
 
     JumpAndFall: {
-        // Check for fall
+        lda CurrentState
+        sta $0420
+        cmp #STATE_JUMPING
+        beq ApplyFall
+
+        nop
+
+      StartFallingCheck:
         lda CurrentCollisions
-        and #COLLISION_FLOOR 
-  
-        bne !++
+        and #COLLISION_FLOOR
+        bne EndOfFall                  // if just landed on floor
+ 
+      Falling:
+        lda CurrentState
+        cmp #STATE_FALLING
+        beq ApplyFall
 
         lda #STATE_FALLING
         sta CurrentState
 
-        lda JumpFallFrame
-        cmp #[__FallPattern - FallPattern - 1]
+        lda #0
+        sta FallFrame
 
-        beq !+
+        jmp ApplyFall
 
-        inc JumpFallFrame
+      EndOfFall:
+        lda CurrentState
+        cmp #STATE_FALLING
+        bne !+
 
-     !: ldy JumpFallFrame
+        lda YPos
+        sec
+        sbc #$06
+        and #$f8
+        ora #$06
+        sta YPos           // round to top of line
 
-        clc
-        lda FallPattern, y
-
-        adc YPos
-        sta YPos
-
-        rts
-
-     !: lda #STATE_NORMAL
+      !:  
+        lda #STATE_NORMAL
         sta CurrentState
 
-        lda #0
-        sta JumpFallFrame
+      ApplyFall:
+            lda CurrentState
+            cmp #STATE_FALLING
+            bne StartJumpingCheck
 
+            ldx FallFrame
+            lda FallPattern, x
+            clc
+            adc YPos
+            sta YPos        // move player Y
+            inx             // move to next index
+
+            cpx #[__FallPattern - FallPattern]
+            bne !+
+            ldx #[__FallPattern - FallPattern - 1]
+
+
+        !:  
+            stx FallFrame
+        !Skip:
+
+      StartJumpingCheck:
+        lda CurrentState
+        cmp #STATE_JUMPING
+        bne EndJumpingCheck
+
+        ldx JumpFrame
+        lda YPos
+        
+        sec
+        sbc JumpPattern, x
+        sta YPos
+      
+        inx
+
+        cpx #[__JumpPattern - JumpPattern]
+        bne !+
+
+        lda #STATE_FALLING
+        sta CurrentState
+        
+      !:
+        stx JumpFrame
+        
+
+      EndJumpingCheck:
         rts
+        
     }
 }
