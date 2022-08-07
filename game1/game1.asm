@@ -12,6 +12,7 @@ BasicUpstart2(Entry)
 #import "utils.asm"
 #import "maploader.asm"
 #import "player.asm"
+#import "sound.asm"
 
 Start:
 

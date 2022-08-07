@@ -39,7 +39,9 @@ PLAYER: {
 
     CurrentCollisions:    .byte %00000000
     CollisionTemp:        .byte %00000000
-    .var COLLISION_FLOOR =      %00000001
+    .var COLLISION_FLOOR =     %00000001
+    .var COLLISION_LEFT =      %00000010
+    .var COLLISION_RIGHT =     %00000100
 
     ScreenRowLSB:        .fill 25, <[SCREEN_RAM + i * 40]
     ScreenRowMSB:        .fill 25, >[SCREEN_RAM + i * 40]
@@ -110,6 +112,10 @@ PLAYER: {
     }
 
     CheckCollisions: {
+        // Clear all collisions
+        lda #0
+        sta CurrentCollisions
+
         // Check foot 1
         ldx #$08
         ldy #$14
@@ -127,21 +133,41 @@ sta $0401
 
         cmp #1
 
-        beq !+
+        bne !+
 
-        // Clear foot collision
-        lda CurrentCollisions
-        and #[255-COLLISION_FLOOR]
-        sta CurrentCollisions
 
-        rts
-
-     !: // Set foot collision
+        // Set foot collision
         lda CurrentCollisions
         ora #COLLISION_FLOOR
         sta CurrentCollisions
+
+     !: // Check left
+
+        ldx #$0b
+        ldy #$1e
+        jsr CheckCollision
+        sta $0428
+
+        beq !+
+
+        lda CurrentCollisions
+        ora #COLLISION_LEFT
+        sta CurrentCollisions
+
+        // Check right
+     !: ldx #$ff
+        ldy #$1e
+        jsr CheckCollision
+        sta $0429
+
+        beq !+
+
+        lda CurrentCollisions
+        ora #COLLISION_RIGHT
+        sta CurrentCollisions
+
         
-        rts
+     !: rts
     }
 
     CheckCollision: {
@@ -195,6 +221,11 @@ sta $0401
         cmp #0
 
         beq !+
+
+//      lda #$08
+//      ldy #0
+//      sta (tmp1), y
+
 
         lda #1
         rts
@@ -252,6 +283,11 @@ rts
           lda JOY2
           and #JOY_RIGHT
           bne check_joystick_left
+
+          lda CurrentCollisions
+          and #COLLISION_RIGHT
+          bne check_joystick_left
+
           lda #DIR_RIGHT
           sta Direction
 
@@ -271,6 +307,10 @@ rts
         check_joystick_left:
           lda JOY2
           and #JOY_LEFT
+          bne check_joystick_up
+
+          lda CurrentCollisions
+          and #COLLISION_LEFT
           bne check_joystick_up
 
           lda XPos
@@ -319,7 +359,6 @@ rts
 
     JumpAndFall: {
         lda CurrentState
-        sta $0420
         cmp #STATE_JUMPING
         beq ApplyFall
 
